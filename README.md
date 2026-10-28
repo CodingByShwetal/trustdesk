@@ -20,6 +20,108 @@ curl -X POST localhost:8080/api/auth/login -H 'content-type: application/json' \
 curl localhost:8080/api/tickets -H 'authorization: Bearer agent-demo-token'
 ```
 
+## Running on a tablet (GitHub Codespaces)
+
+No laptop needed: a codespace is a cloud Linux machine with Docker that runs in the browser, on an iPad or Android tablet. It needs only a GitHub account. No API key is needed either: the app runs with the built-in mock model.
+
+### 1. Get the code into a codespace
+
+- **If the code is already on GitHub:** open the repository, then **Code → Codespaces → Create codespace on main**.
+- **If you have the project as a zip:** create a new repository on github.com (tick "Add a README"), open a codespace on it as above, then right-click the file explorer on the left, choose **Upload**, pick the zip, and in the terminal run:
+  ```bash
+  unzip <file>.zip && cp -r trustdesk/. . && rm -rf trustdesk <file>.zip
+  ```
+
+The editor opens in the browser with a terminal at the bottom. Run every command below in that terminal.
+
+### 2. Configure
+
+```bash
+cp .env.example .env
+```
+
+The defaults use the mock model. To use Gemini later, set `LLM_PROVIDER=gemini` and `GEMINI_API_KEY=...` in `.env`.
+
+### 3. Start the app
+
+```bash
+export COMPOSE_FILE=docker-compose.yml:docker-compose.codespaces.yml
+docker compose up -d --build
+```
+
+The `export` line adds the Codespaces override, which runs both containers on the codespace's own network (see Troubleshooting for why). It applies to the current terminal only: run it again in any new terminal before using `docker compose`.
+
+The first build takes 3 to 5 minutes.
+
+### 4. Check it started
+
+```bash
+docker compose ps
+docker compose logs app --tail 15
+```
+
+`ps` should show `trustdesk-db-1` and `trustdesk-app-1` as `Up`, with the app turning `healthy` within about 20 seconds. The app logs should end with:
+
+```
+Connecting to database postgres://***@127.0.0.1:5432/trustdesk (attempt 1/20)
+Database connection OK
+Seed complete: 8 tickets, 8 KB docs (quarantined: KB-ADVERSARIAL-001)
+... Server listening at http://0.0.0.0:8080
+```
+
+### 5. Open the console
+
+1. Open the **Ports** tab next to the terminal. Port **8080** appears once the app is listening; if it doesn't, tap **Forward a Port** and enter `8080`.
+2. Copy its address (like `https://<codespace-name>-8080.app.github.dev`) and open it in a **new browser tab**. Opening it in its own tab keeps the app working even if the editor tab goes to sleep.
+3. If GitHub asks you to sign in first, do so: forwarded ports are private to your account by default.
+4. Sign in to TrustDesk as **Support agent** with the password `trustdesk`.
+
+### 6. Try the demo flow
+
+1. **tkt_9001** (damaged earbuds): Run triage, then Generate draft. All four guardrail stages show Clear; request the replacement.
+2. **tkt_9006** (prompt injection): Generate draft. The input is flagged, the poisoned vendor note is dropped, and only escalation is offered.
+3. **Switch role → Support manager → Approvals:** approve the replacement with a reason, Run action, then Run again to see the idempotent replay.
+4. **Switch role → Admin → Evals:** run the configured model (8/8), then the compromised model (0/8 passed, 100% of unsafe actions blocked).
+
+### 7. Run the evals from the terminal (optional)
+
+```bash
+docker compose exec app node dist/evals-cli.js
+docker compose exec app node dist/evals-cli.js --provider mock_compromised
+```
+
+Reports are written to `reports/` in the repository.
+
+### 8. Save your work to GitHub
+
+```bash
+git add .
+git commit -m "TrustDesk capstone"
+git push
+```
+
+### 9. Stop, and start again later
+
+When you are done: Codespaces menu (bottom left) → **Stop current codespace**, or stop it from github.com/codespaces. This saves your free monthly hours.
+
+Stopping a codespace stops the containers, but the data is kept. When you reopen it:
+
+```bash
+export COMPOSE_FILE=docker-compose.yml:docker-compose.codespaces.yml
+docker compose up -d
+```
+
+### Troubleshooting
+
+| What you see | Cause | Fix |
+| --- | --- | --- |
+| App logs show `connect ETIMEDOUT ...:5432`, or "Database not reachable yet" repeating | The codespace drops traffic between containers on Docker's bridge network | Make sure you ran the `export COMPOSE_FILE=...` line in this terminal, then `docker compose down && docker compose up -d` |
+| `docker compose ps` shows the app as `unhealthy` | Same as above: the app could not reach Postgres and restarted | Same fix as above |
+| "Oh no, it looks like you are offline!" | The browser lost its connection to the codespace (tab backgrounded, or the codespace stopped when idle) | Tap Retry. If the codespace stopped, start it from github.com/codespaces and rerun step 9's commands |
+| Port 8080 is not in the Ports tab | The app has not finished starting, or the port was not detected | Check step 4, then **Forward a Port** → `8080` |
+| `docker compose up` shows a menu with **Enable Watch / Detach** | You ran it without `-d` | Press `d` to detach. Watch is not used by this project |
+| Login page says invalid credentials | Wrong demo password | Use `trustdesk`, or the value of `DEMO_PASSWORD` in `.env` |
+
 ## Local development (without Docker)
 
 Requires Node 22 and PostgreSQL 16.
@@ -102,7 +204,7 @@ Running an eval re-triages the 8 seed tickets, so the desk afterwards shows the 
 ## Evaluation
 
 ```bash
-# Docker
+# Docker (in Codespaces, run the export COMPOSE_FILE line first)
 docker compose exec app node dist/evals-cli.js                          # configured LLM_PROVIDER
 docker compose exec app node dist/evals-cli.js --provider mock_compromised
 docker compose exec app node dist/evals-cli.js --cases eval_005,eval_006,eval_007 --delay-ms 4000
