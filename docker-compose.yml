@@ -1,0 +1,32 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: trustdesk
+      POSTGRES_PASSWORD: trustdesk
+      POSTGRES_DB: trustdesk
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trustdesk -d trustdesk"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://trustdesk:trustdesk@db:5432/trustdesk
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./reports:/app/reports   # eval reports appear in ./reports on your machine
+    restart: unless-stopped
+
+volumes:
+  pgdata:

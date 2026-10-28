@@ -1,0 +1,10 @@
+# Codespaces only: run on the host network because the codespace
+# drops traffic between containers on Docker's default bridge network.
+services:
+  db:
+    network_mode: host
+  app:
+    network_mode: host
+    ports: !reset []
+    environment:
+      DATABASE_URL: postgres://trustdesk:trustdesk@127.0.0.1:5432/trustdesk
